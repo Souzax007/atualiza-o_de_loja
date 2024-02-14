@@ -1,124 +1,44 @@
 <?php
 session_start();
 
-// Verifica se o usuário está autenticado
+// Verifica a autenticação do usuário
 if (!isset($_SESSION['id_login'])) {
-    // Redireciona para a página de login se não estiver autenticado
     header("Location:../protect.php");
     exit();
 }
 
 include("../conexao/conexao.php");
 
-// Consulta SQL para obter categorias
-$sql_categorias = "SELECT id_categoria, nm_categoria FROM categorias";
-$result_categorias = $conn->query($sql_categorias);
-
-// Verifique se há resultados antes de usar
-$categorias = array();
-if ($result_categorias->num_rows > 0) {
-    while ($row_categoria = $result_categorias->fetch_assoc()) {
-        $categorias[] = $row_categoria;
+// Função para obter os tamanhos associados a um produto
+function getTamanhosAssociados($conn, $id_produto) {
+    $tamanhos = [];
+    $sql = "SELECT id_tamanho FROM prod_tam WHERE id_produto = ?";
+    $stmt = $conn->prepare($sql);
+    $stmt->bind_param("i", $id_produto);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    while ($row = $result->fetch_assoc()) {
+        $tamanhos[] = $row['id_tamanho'];
     }
-}
-
-// Consulta SQL para obter marcas
-$sql_marcas = "SELECT id_marca, nm_marca FROM marcas";
-$result_marcas = $conn->query($sql_marcas);
-
-// Verifique se há resultados antes de usar
-$marcas = array();
-if ($result_marcas->num_rows > 0) {
-    while ($row_marca = $result_marcas->fetch_assoc()) {
-        $marcas[] = $row_marca;
-    }
-}
-
-// Consulta SQL para obter tamanhos
-$sql_tam = "SELECT id_tam, nm_tam FROM tamanhos";
-$result_tam = $conn->query($sql_tam);
-
-// Verifique se há resultados antes de usar
-$tam = array();
-if ($result_tam->num_rows > 0) {
-    while ($row_tam = $result_tam->fetch_assoc()) {
-        $tam[] = $row_tam;
-    }
+    return $tamanhos;
 }
 
 // Inicialização de variáveis
-$id_produto = $id_categoria = $id_marca = $nm_produto = $id_tam = $nm_tam = $ds_descricao = $vl_valor = $nr_estoque = $mensagem = "";
+$id_produto = $id_categoria = $id_marca = $nm_produto = $ds_descricao = $vl_valor = $nr_estoque = $mensagem = "";
+$acao = "insert"; // Por padrão, estamos inserindo um produto
 
-// Verifica se 'id' está definido antes de usá-lo
-$id = (isset($_GET["id"])) ? intval($_GET["id"]) : 0;
+// Verifica se há uma ID válida para atualização
+if (isset($_GET["id"]) && is_numeric($_GET["id"])) {
+    $id = intval($_GET["id"]);
+    $acao = "upd"; // Atualizando um produto existente
 
-// Sanitização da ação
-$acao = (isset($_POST['act'])) ? $_POST["act"] : (isset($_GET["acao"]) ? $_GET["acao"] : "");
-
-// Processamento do formulário
-if ($_SERVER["REQUEST_METHOD"] == "POST") {
-
-    // Sanitização e obtenção de dados do formulário
-    $var_id_produto = (isset($_POST["id_produto"])) ? intval($_POST["id_produto"]) : 0;
-    $var_id_categoria = (isset($_POST["id_categoria"])) ? intval($_POST["id_categoria"]) : 0;
-    $var_id_marca = (isset($_POST["id_marca"])) ? intval($_POST["id_marca"]) : 0;
-    $var_nm_produto = (isset($_POST["nm_produto"])) ? mysqli_real_escape_string($conn, $_POST["nm_produto"]) : "";
-    $var_ds_descricao = (isset($_POST["ds_descricao"])) ? mysqli_real_escape_string($conn, $_POST["ds_descricao"]) : "";
-    $var_vl_valor = (isset($_POST["vl_valor"])) ? floatval($_POST["vl_valor"]) : 0.0;
-    $var_nr_estoque = (isset($_POST["nr_estoque"])) ? intval($_POST["nr_estoque"]) : 0;
-
-    // Verificar se os campos não estão vazios antes de inserir ou atualizar
-    if (!empty($var_nm_produto) && !empty($var_ds_descricao) && $var_vl_valor > 0 && $var_nr_estoque >= 0) {
-        if ($acao === "insert") {
-            // SQL preparado para inserção
-            $sql_insert = "INSERT INTO produtos (id_categoria, id_marca, nm_produto, ds_descricao, vl_valor, nr_estoque) VALUES (?, ?, ?, ?, ?, ?)";
-            $stmt = $conn->prepare($sql_insert);
-            $stmt->bind_param("iisssd", $var_id_categoria, $var_id_marca, $var_nm_produto, $var_ds_descricao, $var_vl_valor, $var_nr_estoque);
-
-            if ($stmt->execute()) {
-                // Obtém o ID do novo registro inserido
-                $id_produto_insert = mysqli_insert_id($conn);
-                $mensagem = "Produto inserido com sucesso!";
-                
-                //GRAVAR OS TAMANHOS SELECIONADOS NO CHECKBOX
-                $id_tam = isset($_POST["id_tam"]) ? $_POST["id_tam"] : array();
-                foreach ($id_tam as $valor_tam) {
-                    $sql_insert_prod_tam = "INSERT INTO prod_tam (id_produto, id_tamanho) VALUES (?, ?)";
-                    $stmt_prod_tam = $conn->prepare($sql_insert_prod_tam);
-                    $stmt_prod_tam->bind_param("ii", $id_produto_insert, $valor_tam);
-                    $stmt_prod_tam->execute();
-                }
-            } else {
-                $mensagem = "Erro ao inserir os dados: " . $stmt->error;
-            }
-        } elseif ($acao === "upd") {
-            // SQL preparado para atualização
-            $sql_upd = "UPDATE produtos SET id_categoria = ?, id_marca = ?, nm_produto = ?, ds_descricao = ?, vl_valor = ?, nr_estoque = ? WHERE id_produto = ?";
-            $stmt = $conn->prepare($sql_upd);
-            $stmt->bind_param("iisssdi", $var_id_categoria, $var_id_marca, $var_nm_produto, $var_ds_descricao, $var_vl_valor, $var_nr_estoque, $var_id_produto);
-
-            if ($stmt->execute()) {
-                $mensagem = "Registro atualizado com sucesso!";
-            } else {
-                $mensagem = "Erro na atualização: " . $stmt->error;
-            }
-        }
-    } else {
-        $mensagem = "Certifique-se de preencher os campos corretamente.";
-    }
-}
-
-
-
-
-// Consulta SQL usando instrução preparada
-if (is_numeric($id) && $id > 0) {
+    // Consulta SQL para obter os detalhes do produto
     $sql = "SELECT id_produto, id_categoria, id_marca, nm_produto, ds_descricao, vl_valor, nr_estoque FROM produtos WHERE id_produto = ?";
     $stmt = $conn->prepare($sql);
-    $stmt->bind_param("s", $id);
+    $stmt->bind_param("i", $id);
     $stmt->execute();
     $result = $stmt->get_result();
-
+    
     if ($result->num_rows > 0) {
         $row = $result->fetch_assoc();
         $id_produto = $row["id_produto"];
@@ -133,20 +53,80 @@ if (is_numeric($id) && $id > 0) {
     }
 }
 
-// Consulta SQL usando instrução preparada
-if (is_numeric($id) && $id > 0) {
-    $sql = "SELECT id_tam,nm_tam FROM tamanhos WHERE id_tam = ?";
-    $stmt = $conn->prepare($sql);
-    $stmt->bind_param("i", $id);
-    $stmt->execute();
-    $result = $stmt->get_result();
+// Processamento do formulário
+if ($_SERVER["REQUEST_METHOD"] == "POST") {
+    // Obtenção dos dados do formulário
+    $id_produto = isset($_POST["id_produto"]) ? intval($_POST["id_produto"]) : 0;
+    $id_categoria = isset($_POST["id_categoria"]) ? intval($_POST["id_categoria"]) : 0;
+    $id_marca = isset($_POST["id_marca"]) ? intval($_POST["id_marca"]) : 0;
+    $nm_produto = isset($_POST["nm_produto"]) ? mysqli_real_escape_string($conn, $_POST["nm_produto"]) : "";
+    $ds_descricao = isset($_POST["ds_descricao"]) ? mysqli_real_escape_string($conn, $_POST["ds_descricao"]) : "";
+    $vl_valor = isset($_POST["vl_valor"]) ? floatval($_POST["vl_valor"]) : 0.0;
+    $nr_estoque = isset($_POST["nr_estoque"]) ? intval($_POST["nr_estoque"]) : 0;
 
-    if ($result->num_rows > 0) {
-        $row = $result->fetch_assoc();
-        $id_tam = $row["id_tam"];
+    // Verificar se os campos estão preenchidos corretamente antes de inserir ou atualizar
+    if (!empty($nm_produto) && !empty($ds_descricao) && $vl_valor > 0 && $nr_estoque >= 0) {
+        if ($acao === "insert") {
+            // Inserção de um novo produto
+            $sql = "INSERT INTO produtos (id_categoria, id_marca, nm_produto, ds_descricao, vl_valor, nr_estoque) VALUES (?, ?, ?, ?, ?, ?)";
+        } elseif ($acao === "upd") {
+            // Atualização de um produto existente
+            $sql = "UPDATE produtos SET id_categoria = ?, id_marca = ?, nm_produto = ?, ds_descricao = ?, vl_valor = ?, nr_estoque = ? WHERE id_produto = ?";
+        }
+
+        $stmt = $conn->prepare($sql);
+
+        if ($acao === "insert") {
+            $stmt->bind_param("iisssd", $id_categoria, $id_marca, $nm_produto, $ds_descricao, $vl_valor, $nr_estoque);
+        } elseif ($acao === "upd") {
+            $stmt->bind_param("iisssdi", $id_categoria, $id_marca, $nm_produto, $ds_descricao, $vl_valor, $nr_estoque, $id_produto);
+        }
+
+        if ($stmt->execute()) {
+            if ($acao === "insert") {
+                $id_produto = mysqli_insert_id($conn);
+            }
+            $mensagem = "Produto " . ($acao === "insert" ? "inserido" : "atualizado") . " com sucesso!";
+
+            // Atualizar os tamanhos associados ao produto
+            $id_tam = isset($_POST["id_tam"]) ? $_POST["id_tam"] : [];
+            $sql_delete = "DELETE FROM prod_tam WHERE id_produto = ?";
+            $stmt_delete = $conn->prepare($sql_delete);
+            $stmt_delete->bind_param("i", $id_produto);
+            $stmt_delete->execute();
+            foreach ($id_tam as $valor_tam) {
+                $sql_insert_prod_tam = "INSERT INTO prod_tam (id_produto, id_tamanho) VALUES (?, ?)";
+                $stmt_prod_tam = $conn->prepare($sql_insert_prod_tam);
+                $stmt_prod_tam->bind_param("ii", $id_produto, $valor_tam);
+                $stmt_prod_tam->execute();
+            }
+        } else {
+            $mensagem = "Erro ao " . ($acao === "insert" ? "inserir" : "atualizar") . " os dados: " . $stmt->error;
+        }
+    } else {
+        $mensagem = "Certifique-se de preencher os campos corretamente.";
     }
 }
 
+// Consulta SQL para obter categorias, marcas e tamanhos
+$sql_categorias = "SELECT id_categoria, nm_categoria FROM categorias";
+$sql_marcas = "SELECT id_marca, nm_marca FROM marcas";
+$sql_tam = "SELECT id_tam, nm_tam FROM tamanhos";
+
+$result_categorias = $conn->query($sql_categorias);
+$result_marcas = $conn->query($sql_marcas);
+$result_tam = $conn->query($sql_tam);
+
+$categorias = $result_categorias->fetch_all(MYSQLI_ASSOC);
+$marcas = $result_marcas->fetch_all(MYSQLI_ASSOC);
+$tam = $result_tam->fetch_all(MYSQLI_ASSOC);
+
+// Obter os tamanhos associados ao produto (se aplicável)
+if ($acao === "upd") {
+    $prod_tam = getTamanhosAssociados($conn, $id_produto);
+} else {
+    $prod_tam = []; // Inicializar como um array vazio
+}
 
 // Fechar a conexão com o banco de dados
 $conn->close();
@@ -157,107 +137,65 @@ $conn->close();
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title></title>
+    <title><?php echo ($acao === "insert") ? "Inserir" : "Atualizar"; ?> Produto</title>
     <link rel="stylesheet" href="../produtos/style2.css">
     <script>
-
-        function func_categoria(valor){
+        function func_categoria(valor) {
             var idTam = document.getElementById("id_tam");
-            //alert(valor);
-            // Verifica se o valor selecionado é igual a 93
-            if (valor == 93) {
-                idTam.style.display = "block"; // Mostra o campo
-            } else {
-                idTam.style.display = "none"; // Oculta o campo
-            }            
+            idTam.style.display = (valor == 93) ? "block" : "none";
         }
     </script>
 </head>
-<body onload="func_categoria(document.form_produtos.id_categoria.value);">
+<body onload="func_categoria(<?php echo $id_categoria; ?>);">
+<a href="../produtos/prod.php"><button class="btn">Voltar</button></a>
 
-    <a href="../produtos/prod.php"><button class="btn">Voltar</button></a>
+<div class="add">
+    <form name="form_produtos" class="for" action="prod_form.php?id=<?php echo $id_produto; ?>" method="POST">
+        <h1><?php echo ($acao === "insert") ? "Inserir" : "Atualizar"; ?> produto</h1>
 
-    <div class="add">
-        <form name="form_produtos" class="for" action="prod_form.php?id=<?php echo $id;?>" method="POST">
-            <h1><?php echo ($acao == "insert") ? "Inserir" : "Atualizar"; ?> produto</h1>
+        <select name="id_categoria" required="required" class="lista-select" onchange="func_categoria(this.value);">
+            <?php foreach ($categorias as $categoria): ?>
+                <option value="<?php echo $categoria['id_categoria']; ?>" <?php echo ($categoria['id_categoria'] == $id_categoria) ? 'selected' : ''; ?>>
+                    <?php echo $categoria['nm_categoria']; ?>
+                </option>
+            <?php endforeach; ?>
+        </select>
 
-            <select name="id_categoria" required="required" class="lista-select" onchange="func_categoria(this.value);">
-                <?php
-                foreach ($categorias as $categoria) {
-                    $id_categoria_option = $categoria["id_categoria"];
-                    $nm_categoria_option = $categoria["nm_categoria"];
-                    echo "<option value=\"$id_categoria_option\"";
-                    if ($id_categoria_option == $id_categoria) {
-                        echo " selected";
-                    }
-                    echo ">$nm_categoria_option</option>";
-                }
-                ?>
-            </select>
-            <div id="id_tam" class="checkbox" >
-            <?php
-            foreach ($tam as $tam_option) {
-                $id_tam_option = $tam_option["id_tam"];
-                $nm_tam_option = $tam_option["nm_tam"];
-                
-                echo $id_tam_option . "---" . $id_produto;
+        <div id="id_tam" class="checkbox" style="display:<?php echo ($id_categoria == 93) ? 'block' : 'none'; ?>">
+            <?php foreach ($tam as $tam_option): ?>
+                <div style="display: inline-block; margin:5px;">
+                    <label>
+                        <input type="checkbox" name="id_tam[]" value="<?php echo $tam_option['id_tam']; ?>" <?php echo (in_array($tam_option['id_tam'], $prod_tam)) ? 'checked' : ''; ?>>
+                        <?php echo $tam_option['nm_tam']; ?>
+                    </label>
+                </div>
+            <?php endforeach; ?>
+        </div>
 
-                //SQL p/ consultar o id_produto e id_tamanho na tabela prod_tam
+        <select name="id_marca" required="required" class="lista-select">
+            <?php foreach ($marcas as $marca): ?>
+                <option value="<?php echo $marca['id_marca']; ?>" <?php echo ($marca['id_marca'] == $id_marca) ? 'selected' : ''; ?>>
+                    <?php echo $marca['nm_marca']; ?>
+                </option>
+            <?php endforeach; ?>
+        </select>
 
+        <label for="nm_produto">Nome <span>*</span></label>
+        <input type="text" name="nm_produto" placeholder="Nome do produto" value="<?php echo $nm_produto; ?>">
 
-                /*if($id_tam_option==$id_tam_retorno_consulta){
-                    $checked = "checked";
-                }else{
-                    $checked = "";
-                }*/
+        <label for="ds_descricao">Descrição <span>*</span></label>
+        <input type="text" name="ds_descricao" placeholder="Descrição do produto" value="<?php echo $ds_descricao; ?>">
 
-                //para deixar o campo checkbox salvo
-                echo "<div style=\"display: inline-block; margin:5px;\">"; // Adiciona um div para exibir em linha
-                echo "<label><input type=\"checkbox\" name=\"id_tam[]\" value=\"$id_tam_option\"";
-                
-                if (in_array($id_tam_option, (array)$id_tam)) {
-                    echo " checked";
-                }
+        <label for="vl_valor">Valor <span>*</span></label>
+        <input type="number" name="vl_valor" placeholder="Valor do produto" value="<?php echo $vl_valor; ?>">
 
-                echo ">$nm_tam_option</label>";
-                echo "</div>"; // Fecha o div
-            }
-            ?>
+        <label for="nr_estoque">Estoque <span>*</span></label>
+        <input type="number" name="nr_estoque" placeholder="Quantidade em estoque" value="<?php echo $nr_estoque; ?>">
 
-            </div>
-
-            <select name="id_marca" required="required" class="lista-select" >
-                <?php
-                foreach ($marcas as $marca) {
-                    $id_marca_option = $marca["id_marca"];
-                    $nm_marca_option = $marca["nm_marca"];
-                    echo "<option value=\"$id_marca_option\"";
-                    if ($id_marca_option == $id_marca) {
-                        echo " selected";
-                    }
-                    echo ">$nm_marca_option</option>";
-                }
-                ?>
-            </select>
-
-            <label for="nm_produto">Nome <span>*</span></label>
-            <input type="text" name="nm_produto" placeholder="Nome do filme" value="<?php echo $nm_produto; ?>">
-
-            <label for="ds_descricao">Descrição <span>*</span></label>
-            <input type="text" name="ds_descricao" placeholder="Fale sobre o filme " value="<?php echo $ds_descricao; ?>">
-
-            <label for="vl_valor">Valor <span>*</span></label>
-            <input type="number" name="vl_valor" placeholder="Quanto irá custar" value="<?php echo $vl_valor; ?>">
-
-            <label for="nr_estoque">Estoque <span>*</span></label>
-            <input type="number" name="nr_estoque" placeholder="Quantidade em estoque" value="<?php echo $nr_estoque; ?>">
-
-            <input type="hidden" name="id_produto" value="<?php echo $id_produto; ?>" <?php echo ($acao === "upd") ? 'readonly' : ''; ?>>
-            <input type="hidden" name="act" value="<?php echo $acao; ?>">
-
-            <button type="submit">SALVAR</button>
-            <p><?php echo $mensagem; ?></p>
-        </form>
-    </div>
+        <input type="hidden" name="id_produto" value="<?php echo $id_produto; ?>">
+        <button type="submit">SALVAR</button>
+        <p><?php echo $mensagem; ?></p>
+    </form>
+</div>
 </body>
 </html>
